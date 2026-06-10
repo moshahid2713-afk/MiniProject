@@ -1,50 +1,42 @@
-Project Prompt: C Terminal Graphics Editor with Advanced Features
+Project Prompt: 2D Terminal Graphics Editor
 
-Create or improve a C program that implements a terminal-based 2D graphics editor using the curses/ncurses (PDCurses-compatible) library.
+Build and improve the C terminal graphics editor in this project using the existing PDCurses-based setup.
 
-The program must keep the existing overall structure, window layout behavior, and menu-driven logic of the original version, while adding the following features:
+Purpose
+- Create and edit simple 2D shapes on a terminal canvas.
+- Support keyboard and mouse interaction.
+- Keep the interface simple, responsive, and easy to use in a text-mode environment.
 
-1. Shape Coloring
-- Extend the Shape structure to store a color pair ID and a fill flag.
-- Support standard terminal colors such as White, Red, Green, Blue, Yellow, Cyan, and Magenta.
-- Initialize color pairs during curses setup using ncurses/PDCurses color support.
-- Update all shape creation dialogs to ask the user to choose a color.
-- Update shape modification dialogs so the user can change the color of an existing shape.
-- Show the shape color name and fill state in the Objects/Info window alongside the shape details.
+Core requirements
+1. Shape editing
+- Support circle, rectangle, line, and triangle shapes.
+- Allow shapes to be added, selected, modified, and removed.
+- Keep the canvas and object list in sync.
 
-2. Fill Functionality
-- Add a boolean fill flag to each shape so shapes can be drawn as solid filled objects.
-- When the fill flag is enabled, render shapes as filled regions instead of only outlines.
-- Support filled rendering for circles, rectangles, and triangles using simple mathematical or scanline-style filling logic suitable for a text-based 2D matrix.
-- Add a prompt in creation and modification dialogs to choose whether the shape should be filled or not.
+2. Color handling
+- Support multiple terminal colors for shape rendering.
+- Allow the active color to be changed immediately with the c key.
+- Ensure the current color is reflected in the status output and applied correctly to shapes on the canvas.
 
-3. Canvas Zooming
-- Introduce a global floating-point zoom scale variable, initially set to 1.0.
-- Add two menu items: "Zoom In" and "Zoom Out".
-- Zoom In should multiply the scale by 1.2.
-- Zoom Out should divide the scale by 1.2.
-- Clamp the zoom factor to a reasonable minimum and maximum range to avoid zero division and excessive shrinking.
-- Update the canvas redraw logic so shapes are rendered using the current zoom scale on the fly.
+3. Fill mode and drawing
+- Support filled and non-filled shapes where applicable.
+- Render shapes correctly on the text canvas and preserve the existing visual style.
 
-4. Mouse Support
-- Enable mouse events during curses initialization using mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL).
-- Allow clicking menu items directly in the menu window to select and activate them.
-- Allow clicking inside the canvas window to detect the clicked coordinates.
-- If a shape is clicked, open the modification dialog for that shape.
-- If an empty area is clicked, open a small shape-creation dialog and create a new shape at that coordinate.
+4. Zoom and layout
+- Support zoom in and zoom out using + and -.
+- Keep the canvas layout stable during resize and refresh.
+- Ensure the menu, canvas, info, and status sections remain usable.
 
-Additional Implementation Requirements
-- Keep the original program structure, window arrangement, and user interaction style as much as possible.
-- Preserve the existing canvas, menu, info, and status window behavior.
-- Use safe dialog input handling and keep the current text-mode interface robust.
-- Ensure window layout and drawing remain stable on terminal resize.
-- Use minimal, clean inline comments to mark newly added features.
-- Keep the code compilable with the provided PDCurses-based project setup.
+5. Mouse and keyboard interaction
+- Allow mouse clicks to select shapes and create new shapes.
+- Keep keyboard shortcuts simple and predictable: c for color cycle, + / - for zoom, r for refresh, and q for quit.
+- Make sure status messages clearly tell the user what action was performed.
 
-Expected Outcome
-The final program should behave like an enhanced version of the original terminal graphics editor, with:
-- shape creation and editing,
-- color selection,
-- fill/non-fill rendering,
-- zoom controls,
-- and mouse interaction.
+Implementation notes
+- The main source file is graphics_editor.c.
+- The project uses a local PDCurses dependency under deps/PDCurses.
+- The code should compile with the provided build setup and remain stable in Windows terminal sessions.
+
+Expected outcome
+- The final program should behave as a polished terminal graphics editor with working shape creation, color changes, zoom controls, mouse interaction, and clear feedback to the user.
+
