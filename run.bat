@@ -13,6 +13,9 @@ if not exist "%PDC%\curses.h" (
     exit /b 1
 )
 
+echo Cleaning any existing graphics_editor process...
+taskkill /F /IM graphics_editor.exe >nul 2>&1
+
 echo Compiling graphics_editor with PDCurses...
 gcc -Wall -Wextra %INC% graphics_editor.c ^
   "%PDC%\pdcurses\addch.c" "%PDC%\pdcurses\addchstr.c" "%PDC%\pdcurses\addstr.c" ^

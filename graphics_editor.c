@@ -68,6 +68,8 @@ static WINDOW *menuWin = NULL;
 static WINDOW *infoWin = NULL;
 static WINDOW *statusWin = NULL;
 static float zoomScale = 1.0f; /* NEW: canvas zoom scale */
+static short activeColorPair = 4; /* NEW: current color for new shapes */
+static int selectedShapeId = -1; /* NEW: currently selected shape */
 
 enum {
   COLOR_CHOICE_WHITE,
@@ -81,6 +83,11 @@ enum {
 
 static const char *COLOR_NAMES[] = {
     "White", "Red", "Green", "Blue", "Yellow", "Cyan", "Magenta"};
+
+static bool isPrimaryMouseClick(const MEVENT *event) {
+  return (event->bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED |
+                           BUTTON1_DOUBLE_CLICKED)) != 0;
+}
 
 static void initCanvas(void) {
   for (int i = 0; i < HEIGHT; i++) {
@@ -448,11 +455,7 @@ static int modifyTriangle(int id, int x1, int y1, int x2, int y2, int x3,
   return 0;
 }
 
-static const char *colorNameForPair(short pairId) {
-  if (pairId >= 4 && pairId <= 10)
-    return COLOR_NAMES[pairId - 4];
-  return COLOR_NAMES[0];
-}
+static const char *colorNameForPair(short pairId);
 
 static void shapeLabel(const Shape *s, char *buf, size_t buflen) {
   const char *fillText = s->is_filled ? "filled" : "wire";
@@ -596,8 +599,12 @@ static void layoutWindows(void) {
 
   if (cols < canvasW + menuW + 2)
     canvasW = cols - menuW - 2;
+  if (canvasW < 30)
+    canvasW = 30;
   if (rows < canvasH + infoH + statusH + 1)
     canvasH = rows - infoH - statusH - 2;
+  if (canvasH < 8)
+    canvasH = 8;
 
   canvasWin = newwin(canvasH, canvasW, 1, 1);
   menuWin = newwin(canvasH, menuW, 1, canvasW + 1);
@@ -607,6 +614,9 @@ static void layoutWindows(void) {
   keypad(menuWin, TRUE);
   keypad(canvasWin, TRUE);
   keypad(infoWin, TRUE);
+  wtimeout(canvasWin, 100);
+  wtimeout(menuWin, 100);
+  wtimeout(infoWin, 100);
 }
 
 static void refreshAll(int menuSelected, const char *status) {
@@ -673,6 +683,18 @@ static short promptColorChoice(WINDOW *dlg, int row, short currentPair) {
   if (choice < 0)
     return -1;
   return (short)(choice + 4);
+}
+
+static short nextColorPair(short currentPair) {
+  int index = (currentPair >= 4 && currentPair <= 10) ? (currentPair - 4) : 0;
+  index = (index + 1) % 7;
+  return (short)(index + 4);
+}
+
+static const char *colorNameForPair(short pairId) {
+  if (pairId >= 4 && pairId <= 10)
+    return COLOR_NAMES[pairId - 4];
+  return COLOR_NAMES[0];
 }
 
 static int promptFilledChoice(WINDOW *dlg, int row, bool currentFilled) {
@@ -1343,7 +1365,7 @@ static void initNcurses(void) {
   noecho();
   curs_set(0);
   keypad(stdscr, TRUE);
-  mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL); /* NEW: mouse support */
+  mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
   mouseinterval(0);
   if (has_colors()) {
     start_color();
@@ -1377,19 +1399,12 @@ int main(void) {
   initCanvas();
   initNcurses();
 
-  if (getmaxy(stdscr) < 34 || getmaxx(stdscr) < 100) {
-    endwin();
-    fprintf(stderr,
-            "Terminal too small. Resize to at least 100x34 and run again.\n");
-    return 1;
-  }
-
   layoutWindows();
 
   int menuSelected = 0;
   int running = 1;
   char status[128] =
-      "Up/Down or 1-8: menu | Enter: select | q: quit";
+      "Click canvas or use menu | c=cycle color | +/- zoom | r=resize | q=quit";
 
   mvprintw(0, (getmaxx(stdscr) - 30) / 2, " 2D GRAPHICS EDITOR WORKSHOP ");
   refresh();
@@ -1397,23 +1412,24 @@ int main(void) {
   while (running) {
     refreshAll(menuSelected, status);
 
-    int ch = wgetch(menuWin);
-    if (ch == KEY_MOUSE) { /* NEW: mouse-driven menu and canvas interactions */
+    int ch = wgetch(stdscr);
+    if (ch == KEY_MOUSE) {
       MEVENT event;
-      if (nc_getmouse(&event) == OK) {
+      if (nc_getmouse(&event) == OK && isPrimaryMouseClick(&event)) {
         int inMenu = event.y >= getbegy(menuWin) &&
                      event.y < getbegy(menuWin) + getmaxy(menuWin) &&
                      event.x >= getbegx(menuWin) &&
                      event.x < getbegx(menuWin) + getmaxx(menuWin);
 
-        if (inMenu && (event.bstate & BUTTON1_CLICKED)) {
+        if (inMenu) {
           int item = event.y - getbegy(menuWin) - 1;
           if (item >= 0 && item < MENU_COUNT) {
             menuSelected = item;
-            if (item == MENU_EXIT)
+            if (item == MENU_EXIT) {
               running = 0;
-            else
+            } else {
               handleMenuAction((MenuItem)item, status, sizeof(status));
+            }
             continue;
           }
         }
@@ -1423,14 +1439,18 @@ int main(void) {
                        event.x >= getbegx(canvasWin) &&
                        event.x < getbegx(canvasWin) + getmaxx(canvasWin);
 
-        if (inCanvas && (event.bstate & BUTTON1_CLICKED)) {
+        if (inCanvas) {
           int px = (event.x - getbegx(canvasWin) - 4) / 2;
           int py = event.y - getbegy(canvasWin) - 2;
           if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
             Shape *hit = findShapeAtPoint(px, py);
             if (hit) {
+              selectedShapeId = hit->id;
               dialogModifyShape(hit->id);
-              snprintf(status, sizeof(status), "Clicked shape ID %d", hit->id);
+              redrawCanvas();
+              snprintf(status, sizeof(status),
+                       "Selected shape ID %d (color: %s)", hit->id,
+                       colorNameForPair(hit->color_pair_id));
               continue;
             }
 
@@ -1442,20 +1462,29 @@ int main(void) {
 
             switch (type) {
             case 0:
-              addCircle(px, py, 3, 4, false);
-              snprintf(status, sizeof(status), "Added circle at %d,%d", px, py);
+              addCircle(px, py, 3, activeColorPair, false);
+              snprintf(status, sizeof(status),
+                       "Added circle at %d,%d (color: %s)", px, py,
+                       colorNameForPair(activeColorPair));
               break;
             case 1:
-              addRectangle(px, py, px + 4, py + 3, 4, false);
-              snprintf(status, sizeof(status), "Added rectangle at %d,%d", px, py);
+              addRectangle(px, py, px + 4, py + 3, activeColorPair, false);
+              snprintf(status, sizeof(status),
+                       "Added rectangle at %d,%d (color: %s)", px, py,
+                       colorNameForPair(activeColorPair));
               break;
             case 2:
-              addLine(px, py, px + 5, py + 2, 4, false);
-              snprintf(status, sizeof(status), "Added line at %d,%d", px, py);
+              addLine(px, py, px + 5, py + 2, activeColorPair, false);
+              snprintf(status, sizeof(status),
+                       "Added line at %d,%d (color: %s)", px, py,
+                       colorNameForPair(activeColorPair));
               break;
             case 3:
-              addTriangle(px, py, px + 4, py, px + 2, py + 4, 4, false);
-              snprintf(status, sizeof(status), "Added triangle at %d,%d", px, py);
+              addTriangle(px, py, px + 4, py, px + 2, py + 4, activeColorPair,
+                          false);
+              snprintf(status, sizeof(status),
+                       "Added triangle at %d,%d (color: %s)", px, py,
+                       colorNameForPair(activeColorPair));
               break;
             }
             continue;
@@ -1470,6 +1499,56 @@ int main(void) {
       menuSelected = (menuSelected + 1) % MENU_COUNT;
     else if (ch >= '1' && ch <= '0' + MENU_COUNT)
       menuSelected = ch - '1';
+    else if (ch == 'c' || ch == 'C') {
+      short previousColor = activeColorPair;
+      activeColorPair = nextColorPair(activeColorPair);
+
+      Shape *target = NULL;
+      if (selectedShapeId >= 0)
+        target = findShapeById(selectedShapeId);
+      if (!target && objectCount > 0) {
+        target = &objects[objectCount - 1];
+        selectedShapeId = target->id;
+      }
+
+      if (target) {
+        target->color_pair_id = activeColorPair;
+        redrawCanvas();
+        snprintf(status, sizeof(status),
+                 "Color changed to %s. Shape ID %d updated on canvas. Press c again to cycle.",
+                 colorNameForPair(activeColorPair), target->id);
+      } else {
+        redrawCanvas();
+        snprintf(status, sizeof(status),
+                 "Color changed to %s. No shape selected yet, so the next shape will use it. Press c again to cycle (previous: %s).",
+                 colorNameForPair(activeColorPair),
+                 colorNameForPair(previousColor));
+      }
+
+      continue;
+    }
+    else if (ch == '+' || ch == '=') {
+      zoomScale *= 1.2f;
+      if (zoomScale > 5.0f)
+        zoomScale = 5.0f;
+      redrawCanvas();
+      snprintf(status, sizeof(status), "Zoom set to %.2f", zoomScale);
+    }
+    else if (ch == '-' || ch == '_') {
+      zoomScale /= 1.2f;
+      if (zoomScale < 0.25f)
+        zoomScale = 0.25f;
+      redrawCanvas();
+      snprintf(status, sizeof(status), "Zoom set to %.2f", zoomScale);
+    }
+    else if (ch == 'r' || ch == 'R') {
+      layoutWindows();
+      mvprintw(0, (getmaxx(stdscr) - 30) / 2, " 2D GRAPHICS EDITOR WORKSHOP ");
+      clrtoeol();
+      refresh();
+      redrawCanvas();
+      snprintf(status, sizeof(status), "Canvas refreshed after resize");
+    }
     else if (ch == 'q' || ch == 'Q')
       running = 0;
     else if (ch == '\n' || ch == KEY_ENTER) {
